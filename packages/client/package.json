@@ -19,7 +19,7 @@
     "validate": "npm run test",
     "test": "exit 0",
     "local": "npm run localbuild && npm run localstart",
-    "localbuild": "cross-env APP_ENV=production VITE_LOCAL_BUILD=true npm run build",
+    "localbuild": "cross-env APP_ENV=production VITE_LOCAL_BUILD=true npm run build && rm -rf ../server/upload/client && cp -r ./dist ../server/upload/client",
     "localstart": "cross-env APP_ENV=production VITE_LOCAL_BUILD=true npm run start",
     "buildenv": "cross-env APP_ENV=production ts-node --swc scripts/create-env-production.ts",
     "populate-assetlinks": "cross-env APP_ENV=production ts-node --swc scripts/populate-assetlinks.ts"
@@ -34,9 +34,8 @@
   },
   "dependencies": {
     "@hookstate/core": "4.0.0-rc21",
-    "@mui/icons-material": "5.8.4",
+    "@mui/icons-material": "5.11.0",
     "@mui/material": "5.11.0",
-    "@mui/system": "5.11.0",
     "@mui/styled-engine-sc": "5.11.0",
     "@originjs/vite-plugin-commonjs": "^1.0.3",
     "@swc/core": "^1.2.210",

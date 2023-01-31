@@ -4,7 +4,6 @@ import { createHookableFunction } from '@xrengine/common/src/utils/createHookabl
 import { dispatchAction, getState } from '@xrengine/hyperflux'
 
 import { AvatarHeadDecapComponent } from '../avatar/components/AvatarIKComponents'
-import { FollowCameraComponent } from '../camera/components/FollowCameraComponent'
 import { V_000 } from '../common/constants/MathConstants'
 import { ButtonInputStateType, createInitialButtonState } from '../input/InputState'
 import { RigidBodyComponent } from '../physics/components/RigidBodyComponent'
@@ -12,11 +11,10 @@ import { SkyboxComponent } from '../scene/components/SkyboxComponent'
 import { setVisibleComponent } from '../scene/components/VisibleComponent'
 import { updateSkybox } from '../scene/functions/loaders/SkyboxFunctions'
 import { TransformComponent } from '../transform/components/TransformComponent'
-import { updateWorldOrigin } from '../transform/updateWorldOrigin'
+import { computeAndUpdateWorldOrigin, updateEyeHeight } from '../transform/updateWorldOrigin'
 import { matches } from './../common/functions/MatchesUtils'
 import { Engine } from './../ecs/classes/Engine'
 import { addComponent, defineQuery, getComponent, hasComponent } from './../ecs/functions/ComponentFunctions'
-import { removeComponent } from './../ecs/functions/ComponentFunctions'
 import { EngineRenderer } from './../renderer/WebGLRendererSystem'
 import { getCameraMode, ReferenceSpace, XRAction, XRState } from './XRState'
 
@@ -24,40 +22,35 @@ const quat180y = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI
 
 const skyboxQuery = defineQuery([SkyboxComponent])
 
-export const onSessionEnd = (prevFollowCamera) => {
-  const _onSessionEnd = () => {
-    const xrState = getState(XRState)
-    xrState.session.value!.removeEventListener('end', _onSessionEnd)
-    xrState.sessionActive.set(false)
-    xrState.sessionMode.set('none')
-    xrState.session.set(null)
-    xrState.sceneScale.set(1)
+export const onSessionEnd = () => {
+  const xrState = getState(XRState)
+  xrState.session.value!.removeEventListener('end', onSessionEnd)
+  xrState.sessionActive.set(false)
+  xrState.sessionMode.set('none')
+  xrState.session.set(null)
+  xrState.sceneScale.set(1)
 
-    Engine.instance.xrFrame = null!
-    const world = Engine.instance.currentWorld
+  Engine.instance.xrFrame = null
+  const world = Engine.instance.currentWorld
 
-    /** @todo move to camera system in a reactor */
-    addComponent(world.cameraEntity, FollowCameraComponent, prevFollowCamera)
+  EngineRenderer.instance.renderer.domElement.style.display = ''
+  setVisibleComponent(world.localClientEntity, true)
 
-    EngineRenderer.instance.renderer.domElement.style.display = ''
-    setVisibleComponent(world.localClientEntity, true)
+  const worldOriginTransform = getComponent(world.originEntity, TransformComponent)
+  worldOriginTransform.position.copy(V_000)
+  worldOriginTransform.rotation.identity()
 
-    const worldOriginTransform = getComponent(world.originEntity, TransformComponent)
-    worldOriginTransform.position.copy(V_000)
-    worldOriginTransform.rotation.identity()
+  ReferenceSpace.origin = null
+  ReferenceSpace.localFloor = null
+  ReferenceSpace.viewer = null
 
-    ReferenceSpace.origin = null
-    ReferenceSpace.localFloor = null
-    ReferenceSpace.viewer = null
+  const skybox = skyboxQuery()[0]
+  if (skybox) updateSkybox(skybox)
+  dispatchAction(XRAction.sessionChanged({ active: false }))
 
-    const skybox = skyboxQuery()[0]
-    if (skybox) updateSkybox(skybox)
-    dispatchAction(XRAction.sessionChanged({ active: false }))
-
-    xrState.session.set(null)
-  }
-  return _onSessionEnd
+  xrState.session.set(null)
 }
+
 export const setupXRSession = async (requestedMode) => {
   const xrState = getState(XRState)
   const xrManager = EngineRenderer.instance.xrManager
@@ -121,8 +114,13 @@ export const getReferenceSpaces = (xrSession: XRSession) => {
 
   /** the world origin is an offset to the local floor, so as soon as we have the local floor, define the origin reference space */
   xrSession.requestReferenceSpace('local-floor').then((space) => {
+    // WebXR Emulator does not support XRReferenceSpace events
+    if ('addEventListener' in space)
+      space.addEventListener('reset', (ev) => {
+        updateEyeHeight()
+      })
     ReferenceSpace.localFloor = space
-    updateWorldOrigin()
+    computeAndUpdateWorldOrigin()
   })
 
   xrSession.requestReferenceSpace('viewer').then((space) => (ReferenceSpace.viewer = space))
@@ -142,10 +140,6 @@ export const requestXRSession = createHookableFunction(
       const xrSession = await setupXRSession(action.mode)
       const world = Engine.instance.currentWorld
 
-      /** @todo move to camera system in a reactor */
-      const prevFollowCamera = getComponent(world.cameraEntity, FollowCameraComponent)
-      removeComponent(world.cameraEntity, FollowCameraComponent)
-
       getReferenceSpaces(xrSession)
 
       const mode = xrState.sessionMode.value
@@ -154,7 +148,7 @@ export const requestXRSession = createHookableFunction(
 
       dispatchAction(XRAction.sessionChanged({ active: true }))
 
-      xrSession.addEventListener('end', onSessionEnd(prevFollowCamera))
+      xrSession.addEventListener('end', onSessionEnd)
     } catch (e) {
       console.error('Failed to create XR Session', e)
     }

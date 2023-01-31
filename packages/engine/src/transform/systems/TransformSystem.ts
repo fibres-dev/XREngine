@@ -6,7 +6,6 @@ import { insertionSort } from '@xrengine/common/src/utils/insertionSort'
 import { createActionQueue, getState, removeActionQueue } from '@xrengine/hyperflux'
 
 import { V_000 } from '../../common/constants/MathConstants'
-import { isHMD } from '../../common/functions/isMobile'
 import { Engine } from '../../ecs/classes/Engine'
 import { EngineActions, EngineState } from '../../ecs/classes/EngineState'
 import { Entity } from '../../ecs/classes/Entity'
@@ -304,7 +303,7 @@ export default async function TransformSystem(world: World) {
         world.dirtyTransforms[getOptionalComponent(entity, LocalTransformComponent)?.parentEntity ?? 0] ||
         world.dirtyTransforms[getOptionalComponent(entity, ComputedTransformComponent)?.referenceEntity ?? 0] ||
         hasComponent(entity, ComputedTransformComponent)
-      if (makeDirty) world.dirtyTransforms[entity] = true
+      world.dirtyTransforms[entity] = makeDirty
     }
 
     const dirtyNonDynamicLocalTransformEntities = nonDynamicLocalTransformQuery().filter(isDirty)
@@ -325,7 +324,7 @@ export default async function TransformSystem(world: World) {
       viewCamera.projectionMatrixInverse.copy(camera.projectionMatrixInverse)
     }
 
-    for (const entity in world.dirtyTransforms) delete world.dirtyTransforms[entity]
+    for (const entity in world.dirtyTransforms) world.dirtyTransforms[entity] = false
 
     for (const entity of staticBoundingBoxQuery.enter()) computeBoundingBox(entity)
     for (const entity of dynamicBoundingBoxQuery()) updateBoundingBox(entity)
@@ -369,7 +368,7 @@ export default async function TransformSystem(world: World) {
 
     /** for HMDs, only iterate priority queue entities to reduce matrix updates per frame. otherwise, this will be automatically run by threejs */
     /** @todo include in auto performance scaling metrics */
-    // if (isHMD) {
+    // if (Engine.instance.xrFrame) {
     //   /**
     //    * Update threejs skeleton manually
     //    *  - overrides default behaviour in WebGLRenderer.render, calculating mat4 multiplcation
